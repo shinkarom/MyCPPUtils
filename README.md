@@ -1,5 +1,5 @@
 # MyCPPUtils
-My utilities for better C++ code.
+My utilities for better C++ 17 code.
 
 File                              | Description
 ----------------------------------|------------------------------------------------

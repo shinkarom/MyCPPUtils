@@ -22,7 +22,8 @@ namespace Markov
 	enum class MarkovType { Characters, Words };
 
 	constexpr int DefaultDepth = 2;
-	constexpr MarkovType DefaultType = MarkovType::Words;
+	constexpr MarkovType DefaultType = MarkovType::Characters;
+	constexpr int DefaultDirichlet = 0;
 
 	class MarkovChain
 	{
@@ -38,9 +39,9 @@ namespace Markov
 	private:
 		MarkovIndex index;
 		MarkovType Type{ DefaultType };
+		int dirichlet{ DefaultDirichlet };
 		MarkovSubindex get_subindex(const MarkovSequence & Bef);
 		MarkovSequence get_aft(const MarkovSequence & Bef);
-		MarkovSequence GenerateSequence(int depth = DefaultDepth);
 		MarkovSequence split(const wstring& item);
 		wstring assemble(const MarkovSequence& item);
 		MarkovSequence slice(const MarkovSequence& item, int b, int e);
@@ -54,32 +55,41 @@ namespace Markov
 	{
 		auto seq = split(item);
 		auto len = seq.size();
-		MarkovSequence bef, aft;
 		if (len == 0) return;
 		else
 			if (len < depth) depth = len;
+		MarkovSequence bef, aft;
 		//
-		aft = slice(seq, 0, 1);
-		index[MarkovSequence{ L"" }][aft]++;
-		//
-		for (int dep = depth; dep >= 1; dep--)
+		for (int dep = 1; dep <= depth; ++dep)
 		{
 			int lim = len - dep - 1;
-			for (int pos = 0; pos <= lim; pos++)
+			for (int pos = 0; pos <= lim; ++pos)
 			{
 				bef = slice(seq, pos, dep);
 				aft = slice(seq, pos + dep, 1);
-				index[bef][aft]++;
+				++index[bef][aft];
 			}
-			bef = slice(seq, len - dep, 1);
-			index[bef][MarkovSequence{ L"" }]++;
 		}
 	}
 
 	inline wstring MarkovChain::Generate(int depth)
 	{
-		auto res = GenerateSequence(depth);
-		return assemble(res);
+		MarkovSequence result;
+		auto h = get_aft(MarkovSequence{ L"" });
+		result.insert(end(result), begin(h), end(h));
+		MarkovSequence aft;
+		do
+		{
+			MarkovSequence j;
+			if (result.size() > depth)
+				j = slice(result, result.size() - depth, depth);
+			else
+				j = slice(result, 0, depth);
+			aft = get_aft(j);
+			result.insert(end(result), begin(aft), end(aft));
+		} while (aft != MarkovSequence{ L"" });
+		result.pop_back();
+		return assemble(result);
 	}
 
 	inline MarkovType MarkovChain::GetType()
@@ -125,41 +135,21 @@ namespace Markov
 	{
 		MarkovSubindex i = get_subindex(Bef);
 		auto sum = 0;
-		for (auto it : i)sum += it.second;
+		for (auto it : i)sum += it.second + dirichlet;
 		auto r = randnum(1, sum);
 		auto it = i.cbegin();
 		while (r > 0)
 		{
-			r -= it->second;
+			r -= it->second + dirichlet;
 			++it;
 		}
 		--it;
 		return it->first;
 	}
 
-	inline MarkovSequence MarkovChain::GenerateSequence(int depth)
-	{
-		MarkovSequence result;
-		auto h = get_aft(MarkovSequence{ L"" });
-		result.insert(end(result), begin(h), end(h));
-		MarkovSequence aft;
-		do
-		{
-			MarkovSequence j;
-			if (result.size() > depth)
-				j = slice(result, result.size() - depth, depth);
-			else
-				j = slice(result, 0, depth);
-			aft = get_aft(j);
-			result.insert(end(result), begin(aft), end(aft));
-		} while (aft != MarkovSequence{ L"" });
-		result.pop_back();
-		return result;
-	}
-
 	inline MarkovSequence MarkovChain::split(const wstring & item)
 	{
-		MarkovSequence result;
+		MarkovSequence result{ L"" };
 		wistringstream ss(item);
 		wstring s;
 		switch (Type)
@@ -175,6 +165,7 @@ namespace Markov
 		default:
 			break;
 		}
+		result.push_back(L"");
 		return result;
 	}
 
@@ -200,16 +191,8 @@ namespace Markov
 
 	inline MarkovSequence MarkovChain::slice(const MarkovSequence & item, int a, int b)
 	{
-		if (a == item.size())
-		{
-			return MarkovSequence{ L"" };
-		}
-		else if (a+b>=item.size())
-		{
-			b = item.size() - a;
-		}
-		auto beg = begin(item) + a;
-		auto en = beg + b;
+		auto beg = a < item.size() ? begin(item) + a : throw out_of_range("value out of range");
+		auto en = a + b < item.size() ? beg + b : end(item);
 		return MarkovSequence(beg, en);
 	}
 
